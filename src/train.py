@@ -153,6 +153,12 @@ class ModelArguments:
             )
         },
     )
+    train_classifier_head_only: bool = field(
+        default=False,
+        metadata={
+            "help": "If true, freeze all model parameters except the classifier head so only it is updated during training.",
+        },
+    )
 
 
 @dataclass
@@ -412,6 +418,19 @@ def main():
 
     if model_args.initialize_label_prototypes:
         initialize_classifier_with_prototypes(model, model_args, label2id)
+
+    if model_args.train_classifier_head_only:
+        classifier_head = getattr(model, "classifier", None)
+        if classifier_head is None:
+            raise ValueError(
+                "Model does not expose a `classifier` attribute; cannot train only the classifier head."
+            )
+
+        for param in model.parameters():
+            param.requires_grad = False
+        for param in classifier_head.parameters():
+            param.requires_grad = True
+        logger.info("Training classifier head only; all other model parameters have been frozen.")
 
     data_collator = DataCollatorWithPadding(tokenizer=feature_extractor, padding=True)
 
