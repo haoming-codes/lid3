@@ -25,6 +25,7 @@ DEFAULT_HYPERPARAMETERS: Dict[str, str] = {
     "load_best_model_at_end": "true",
     "metric_for_best_model": "accuracy",
     "preprocessing_num_workers": "16",
+    "initialize_label_prototypes": "true",
 }
 
 
