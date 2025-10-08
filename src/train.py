@@ -93,7 +93,20 @@ def initialize_classifier_with_prototypes(model, model_args: "ModelArguments", l
         logger.warning("Failed to load base model for prototype initialization: %s", exc)
         return
 
-    base_label2id = {label.lower(): idx for label, idx in base_model.config.label2id.items()}
+    if base_model.config.label2id:
+        base_label2id = {
+            label.lower(): idx for label, idx in base_model.config.label2id.items()
+        }
+    elif base_model.config.id2label:
+        base_label2id = {
+            label.lower(): idx for idx, label in base_model.config.id2label.items()
+        }
+    else:
+        logger.warning(
+            "Base model %s does not define label2id or id2label mapping; skipping prototype initialization",
+            model_args.model_name_or_path,
+        )
+        return
     base_weight = base_model.classifier.weight.detach()
     base_bias = base_model.classifier.bias.detach()
 
