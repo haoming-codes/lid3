@@ -2,7 +2,8 @@ import argparse
 import json
 from typing import Dict, Optional
 
-from sagemaker.huggingface import HuggingFace
+from sagemaker import get_execution_role
+from sagemaker.pytorch import PyTorch
 from sagemaker.session import Session
 
 
@@ -23,7 +24,7 @@ DEFAULT_HYPERPARAMETERS: Dict[str, str] = {
     "warmup_ratio": "0.1",
     "load_best_model_at_end": "true",
     "metric_for_best_model": "accuracy",
-    "preprocessing_num_workers": "8",
+    "preprocessing_num_workers": "16",
 }
 
 
@@ -36,8 +37,8 @@ def parse_overrides(raw_overrides: Optional[str]) -> Dict[str, str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Launch a SageMaker training job for MMS LID fine-tuning")
-    parser.add_argument("--role", required=True, help="IAM role ARN that SageMaker will assume.")
-    parser.add_argument("--job-name", required=True, help="Name of the SageMaker training job.")
+    # parser.add_argument("--role", required=True, help="IAM role ARN that SageMaker will assume.")
+    # parser.add_argument("--job-name", required=True, help="Name of the SageMaker training job.")
     parser.add_argument(
         "--train-manifest-s3",
         default="s3://us-west-2-ehmli/lid-job/manifests/data_train_0930.s3.jsonl",
@@ -49,8 +50,11 @@ def main() -> None:
         help="S3 URI to the validation manifest JSONL file.",
     )
     parser.add_argument("--test-manifest-s3", help="Optional S3 URI to the test manifest JSONL file.")
-    parser.add_argument("--output-s3", required=True, help="S3 URI where model artifacts will be stored.")
-    parser.add_argument("--instance-type", default="ml.g5.2xlarge", help="Instance type for training.")
+    parser.add_argument(
+        "--output-s3", 
+        default="s3://us-west-2-ehmli/lid-job/models/",
+        help="S3 URI where model artifacts will be stored.")
+    parser.add_argument("--instance-type", default="ml.g5.4xlarge", help="Instance type for training.")
     parser.add_argument("--instance-count", type=int, default=1, help="Number of instances to launch.")
     parser.add_argument("--volume-size", type=int, default=300, help="EBS volume size in GB.")
     parser.add_argument(
@@ -87,24 +91,25 @@ def main() -> None:
 
     session = Session()
 
-    estimator = HuggingFace(
+    estimator = PyTorch(
         entry_point="train.py",
         source_dir="src",
         image_uri=args.image_uri,
-        role=args.role,
+        role=get_execution_role(),
         instance_type=args.instance_type,
         instance_count=args.instance_count,
         volume_size=args.volume_size,
-        base_job_name=args.job_name,
+        # base_job_name=args.job_name,
         hyperparameters=hyperparameters,
         output_path=args.output_s3,
         sagemaker_session=session,
-        use_spot_instances=not args.disable_spot_instance,
-        max_wait=None if args.disable_spot_instance else args.max_wait,
+        # use_spot_instances=not args.disable_spot_instance,
+        # max_wait=None if args.disable_spot_instance else args.max_wait,
         dependencies=["requirements.txt"],
+        max_run=3600,
     )
 
-    estimator.fit(inputs=inputs, job_name=args.job_name)
+    estimator.fit(inputs=inputs)
 
 
 if __name__ == "__main__":
