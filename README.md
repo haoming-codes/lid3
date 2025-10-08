@@ -43,6 +43,14 @@ python src/launch_sagemaker.py \
   --output-s3 s3://my-bucket/lid-training-artifacts/
 ```
 
+To target AWS Trainium hardware you can launch the job on an `ml.trn1.2xlarge` instance type by selecting the Neuron-compatible Hugging Face DLC image:
+
+```bash
+python src/launch_sagemaker.py \
+  --instance-type ml.trn1.2xlarge \
+  --image-uri 763104351884.dkr.ecr.us-west-2.amazonaws.com/huggingface-pytorch-training-neuronx:2.1.1-transformers4.36.2-neuronx-py310-ubuntu20.04
+```
+
 Hyperparameters default to a sensible configuration but can be overridden with `--hyperparameters '{"learning_rate": 5e-5, "num_train_epochs": 10}'`. Additional CLI options allow configuration of instance type/count, managed spot training, and container versions.
 
 ## Dependencies
