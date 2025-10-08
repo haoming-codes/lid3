@@ -13,10 +13,12 @@ DEFAULT_HYPERPARAMETERS: Dict[str, str] = {
     "do_eval": "true",
     "output_dir": "/opt/ml/model",
     "overwrite_output_dir": "true",
+    "num_train_epochs": "5",
     "eval_strategy": "steps", "eval_steps": "500",
     "save_strategy": "steps", "save_steps": "500",
     "save_strategy": "steps", "logging_steps": "100",
-    "per_device_train_batch_size": "8",
+    "eval_on_start": "true",
+    "per_device_train_batch_size": "4",
     "per_device_eval_batch_size": "8",
     "gradient_accumulation_steps": "1",
     "learning_rate": "3e-5",
@@ -26,6 +28,9 @@ DEFAULT_HYPERPARAMETERS: Dict[str, str] = {
     "metric_for_best_model": "accuracy",
     "preprocessing_num_workers": "16",
     "initialize_label_prototypes": "true",
+    # "max_train_samples": "100",
+    # "max_eval_samples": "100",
+    "bf16": "true",
 }
 
 
@@ -52,7 +57,7 @@ def main() -> None:
     )
     parser.add_argument("--test-manifest-s3", help="Optional S3 URI to the test manifest JSONL file.")
     parser.add_argument(
-        "--output-s3", 
+        "--output-s3",
         default="s3://us-west-2-ehmli/lid-job/models/",
         help="S3 URI where model artifacts will be stored.")
     parser.add_argument("--instance-type", default="ml.g5.4xlarge", help="Instance type for training.")
