@@ -13,9 +13,9 @@ DEFAULT_HYPERPARAMETERS: Dict[str, str] = {
     "do_eval": "true",
     "output_dir": "/opt/ml/model",
     "overwrite_output_dir": "true",
-    "evaluation_strategy": "epoch",
-    "save_strategy": "epoch",
-    "logging_steps": "50",
+    "eval_strategy": "step", "eval_steps": "500",
+    "save_strategy": "step", "save_steps": "500",
+    "save_strategy": "step", "logging_steps": "100",
     "per_device_train_batch_size": "8",
     "per_device_eval_batch_size": "8",
     "gradient_accumulation_steps": "1",
@@ -67,16 +67,16 @@ def main() -> None:
         default="763104351884.dkr.ecr.us-west-2.amazonaws.com/huggingface-pytorch-training:2.5.1-transformers4.49.0-gpu-py311-cu124-ubuntu22.04",
         help="Container image URI to use for the training job.",
     )
-    parser.add_argument(
-        "--disable-spot-instance",
-        action="store_true",
-        help="Disable SageMaker managed spot training (on-demand instances will be used).",
-    )
-    parser.add_argument(
-        "--max-wait",
-        type=int,
-        default=None,
-        help="When using spot instances, the maximum wait time (in seconds).",
+    # parser.add_argument(
+    #     "--disable-spot-instance",
+    #     action="store_true",
+    #     help="Disable SageMaker managed spot training (on-demand instances will be used).",
+    # )
+    # parser.add_argument(
+    #     "--max-wait",
+    #     type=int,
+    #     default=None,
+    #     help="When using spot instances, the maximum wait time (in seconds).",
     )
 
     args = parser.parse_args()
