@@ -10,6 +10,7 @@ import boto3
 import datasets
 import evaluate
 import numpy as np
+import torch
 from datasets import Audio, Dataset, DatasetDict
 from transformers import (
     AutoConfig,
@@ -26,6 +27,43 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
+OTHER_CLASS_SOURCE_LANGS = [
+    # Indian subcontinent languages
+    "asm",
+    "ben",
+    "hin",
+    "mal",
+    "tam",
+    "tel",
+    "urd",
+    "guj",
+    "kan",
+    "pan",
+    "mar",
+    "ory",
+    "sin",
+    "npi",
+    "san",
+    # Southeast Asian languages
+    "vie",
+    "sun",
+    "zlm",
+    "ind",
+    "tgl",
+    "jav",
+    "ceb",
+    "war",
+    "tha",
+    "khm",
+    "lao",
+    "mya",
+    # East Asian languages (excluding Chinese varieties)
+    "kor",
+    "jpn",
+    "mon",
+]
+
+
 _S3_CLIENT = None
 
 
@@ -37,6 +75,53 @@ def get_s3_client():
     return _S3_CLIENT
 
 
+def initialize_classifier_with_prototypes(model, model_args: "ModelArguments", label2id: Dict[str, int]) -> None:
+    """Optionally initialize classifier weights from MMS-LID prototypes."""
+
+    target_to_sources = {
+        "zh": ["yue", "cmn"],
+        "en": ["eng"],
+        "other": OTHER_CLASS_SOURCE_LANGS,
+    }
+
+    try:
+        base_model = AutoModelForAudioClassification.from_pretrained(
+            model_args.model_name_or_path,
+            cache_dir=model_args.cache_dir,
+        )
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.warning("Failed to load base model for prototype initialization: %s", exc)
+        return
+
+    base_label2id = {label.lower(): idx for label, idx in base_model.config.label2id.items()}
+    base_weight = base_model.classifier.weight.detach()
+    base_bias = base_model.classifier.bias.detach()
+
+    with torch.no_grad():
+        for target_label, source_labels in target_to_sources.items():
+            if target_label not in label2id:
+                continue
+
+            source_indices = [base_label2id.get(code.lower()) for code in source_labels]
+            source_indices = [idx for idx in source_indices if idx is not None]
+
+            if not source_indices:
+                logger.warning("No matching source languages found for target label '%s'", target_label)
+                continue
+
+            target_idx = label2id[target_label]
+            weight_mean = base_weight[source_indices].mean(dim=0)
+            bias_mean = base_bias[source_indices].mean()
+
+            model.classifier.weight.data[target_idx] = weight_mean.to(model.classifier.weight.device)
+            model.classifier.bias.data[target_idx] = bias_mean.to(model.classifier.bias.device)
+            logger.info(
+                "Initialized classifier weights for '%s' using %d source languages", target_label, len(source_indices)
+            )
+
+    del base_model
+
+
 @dataclass
 class ModelArguments:
     model_name_or_path: str = field(
@@ -45,6 +130,15 @@ class ModelArguments:
     )
     cache_dir: Optional[str] = field(
         default=None, metadata={"help": "Where to store pretrained models downloaded from huggingface.co"}
+    )
+    initialize_label_prototypes: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "If true, initialize the classification head using averaged prototypes from the "
+                "facebook/mms-lid-126 checkpoint for zh/en/other labels."
+            )
+        },
     )
 
 
@@ -300,7 +394,11 @@ def main():
         model_args.model_name_or_path,
         config=config,
         cache_dir=model_args.cache_dir,
+        ignore_mismatched_sizes=True,
     )
+
+    if model_args.initialize_label_prototypes:
+        initialize_classifier_with_prototypes(model, model_args, label2id)
 
     data_collator = DataCollatorWithPadding(feature_extractor=feature_extractor, padding=True)
 
