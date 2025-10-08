@@ -38,8 +38,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Launch a SageMaker training job for MMS LID fine-tuning")
     parser.add_argument("--role", required=True, help="IAM role ARN that SageMaker will assume.")
     parser.add_argument("--job-name", required=True, help="Name of the SageMaker training job.")
-    parser.add_argument("--train-manifest-s3", required=True, help="S3 URI to the training manifest JSONL file.")
-    parser.add_argument("--validation-manifest-s3", help="Optional S3 URI to the validation manifest JSONL file.")
+    parser.add_argument(
+        "--train-manifest-s3",
+        default="s3://us-west-2-ehmli/lid-job/manifests/data_train_0930.s3.jsonl",
+        help="S3 URI to the training manifest JSONL file.",
+    )
+    parser.add_argument(
+        "--validation-manifest-s3",
+        default="s3://us-west-2-ehmli/lid-job/manifests/data_valid_0930.s3.jsonl",
+        help="S3 URI to the validation manifest JSONL file.",
+    )
     parser.add_argument("--test-manifest-s3", help="Optional S3 URI to the test manifest JSONL file.")
     parser.add_argument("--output-s3", required=True, help="S3 URI where model artifacts will be stored.")
     parser.add_argument("--instance-type", default="ml.g5.2xlarge", help="Instance type for training.")
@@ -50,12 +58,10 @@ def main() -> None:
         help="JSON dictionary of hyperparameter overrides to merge with the defaults.",
     )
     parser.add_argument(
-        "--transformers-version",
-        default="4.38",
-        help="Transformers container version to use.",
+        "--image-uri",
+        default="763104351884.dkr.ecr.us-west-2.amazonaws.com/huggingface-pytorch-training:2.5.1-transformers4.49.0-gpu-py311-cu124-ubuntu22.04",
+        help="Container image URI to use for the training job.",
     )
-    parser.add_argument("--pytorch-version", default="2.1", help="PyTorch version to use.")
-    parser.add_argument("--py-version", default="py310", help="Python version to use.")
     parser.add_argument(
         "--disable-spot-instance",
         action="store_true",
@@ -84,13 +90,11 @@ def main() -> None:
     estimator = HuggingFace(
         entry_point="train.py",
         source_dir="src",
+        image_uri=args.image_uri,
         role=args.role,
         instance_type=args.instance_type,
         instance_count=args.instance_count,
         volume_size=args.volume_size,
-        transformers_version=args.transformers_version,
-        pytorch_version=args.pytorch_version,
-        py_version=args.py_version,
         base_job_name=args.job_name,
         hyperparameters=hyperparameters,
         output_path=args.output_s3,
