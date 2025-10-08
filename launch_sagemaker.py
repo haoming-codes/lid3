@@ -31,6 +31,7 @@ DEFAULT_HYPERPARAMETERS: Dict[str, str] = {
     # "max_train_samples": "100",
     # "max_eval_samples": "100",
     "bf16": "true",
+    "disable_tqdm": "true",
 }
 
 
@@ -112,7 +113,7 @@ def main() -> None:
         # use_spot_instances=not args.disable_spot_instance,
         # max_wait=None if args.disable_spot_instance else args.max_wait,
         dependencies=["requirements.txt"],
-        max_run=3600,
+        max_run=24*3600,
     )
 
     estimator.fit(inputs=inputs)
