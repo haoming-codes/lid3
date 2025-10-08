@@ -413,7 +413,7 @@ def main():
     if model_args.initialize_label_prototypes:
         initialize_classifier_with_prototypes(model, model_args, label2id)
 
-    data_collator = DataCollatorWithPadding(feature_extractor=feature_extractor, padding=True)
+    data_collator = DataCollatorWithPadding(tokenizer=feature_extractor, padding=True)
 
     accuracy_metric = evaluate.load("accuracy")
     precision_metric = evaluate.load("precision")
