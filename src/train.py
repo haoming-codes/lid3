@@ -415,11 +415,58 @@ def main():
 
     data_collator = DataCollatorWithPadding(feature_extractor=feature_extractor, padding=True)
 
-    metric = evaluate.load("accuracy")
+    accuracy_metric = evaluate.load("accuracy")
+    precision_metric = evaluate.load("precision")
+    recall_metric = evaluate.load("recall")
+    confusion_metric = evaluate.load("confusion_matrix")
 
     def compute_metrics(prediction):
         preds = np.argmax(prediction.predictions, axis=-1)
-        return metric.compute(predictions=preds, references=prediction.label_ids)
+        references = prediction.label_ids
+
+        accuracy = accuracy_metric.compute(predictions=preds, references=references)["accuracy"]
+        precision = precision_metric.compute(
+            predictions=preds,
+            references=references,
+            average=None,
+            zero_division=0,
+        )["precision"]
+        recall = recall_metric.compute(
+            predictions=preds,
+            references=references,
+            average=None,
+            zero_division=0,
+        )["recall"]
+        confusion = confusion_metric.compute(
+            predictions=preds,
+            references=references,
+            labels=list(range(len(label_list))),
+        )["confusion_matrix"]
+
+        confusion_matrix = np.asarray(confusion)
+        per_class_accuracy = []
+        for idx, label in enumerate(label_list):
+            true_positives = confusion_matrix[idx, idx]
+            total_actual = confusion_matrix[idx].sum()
+            class_accuracy = (true_positives / total_actual) if total_actual else 0.0
+            per_class_accuracy.append(class_accuracy)
+            logger.info(
+                "Evaluation metrics for class '%s': accuracy=%.4f precision=%.4f recall=%.4f",
+                label,
+                class_accuracy,
+                precision[idx],
+                recall[idx],
+            )
+
+        logger.info("Evaluation confusion matrix (rows=actual, cols=predicted):\n%s", confusion_matrix)
+
+        metrics = {"accuracy": float(accuracy)}
+        for idx, label in enumerate(label_list):
+            metrics[f"accuracy_{label}"] = float(per_class_accuracy[idx])
+            metrics[f"precision_{label}"] = float(precision[idx])
+            metrics[f"recall_{label}"] = float(recall[idx])
+
+        return metrics
 
     trainer = Trainer(
         model=model,
