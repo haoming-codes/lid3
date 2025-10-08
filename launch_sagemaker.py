@@ -77,7 +77,7 @@ def main() -> None:
     #     type=int,
     #     default=None,
     #     help="When using spot instances, the maximum wait time (in seconds).",
-    )
+    # )
 
     args = parser.parse_args()
 
