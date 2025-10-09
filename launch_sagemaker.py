@@ -1,46 +1,91 @@
 import argparse
 import json
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from sagemaker import get_execution_role
 from sagemaker.pytorch import PyTorch
 from sagemaker.session import Session
 
 
-DEFAULT_HYPERPARAMETERS: Dict[str, str] = {
+DEFAULT_HYPERPARAMETERS: Dict[str, Any] = {
+    # Model configuration (ModelArguments)
     "model_name_or_path": "facebook/mms-lid-512",
-    "do_train": "true",
-    "do_eval": "true",
-    "output_dir": "/opt/ml/model",
-    "overwrite_output_dir": "true",
-    "num_train_epochs": "5",
-    "eval_strategy": "steps", "eval_steps": "500",
-    "save_strategy": "steps", "save_steps": "500",
-    "save_strategy": "steps", "logging_steps": "100",
-    "eval_on_start": "true",
-    "per_device_train_batch_size": "4",
-    "per_device_eval_batch_size": "8",
-    "gradient_accumulation_steps": "1",
-    "learning_rate": "3e-5",
-    "num_train_epochs": "5",
-    "warmup_ratio": "0.1",
-    "load_best_model_at_end": "true",
-    "metric_for_best_model": "accuracy",
-    "preprocessing_num_workers": "16",
-    "initialize_label_prototypes": "true",
+    "cache_dir": None,
+    "initialize_label_prototypes": True,
     "language_mapping_strategy": "accented",
-    "max_train_samples": "100",
-    "max_eval_samples": "100",
-    "bf16": "true",
-    "disable_tqdm": "true",
+    "train_classifier_head_only": False,
+
+    # Data manifests and preprocessing (DataTrainingArguments)
+    "train_manifest": None,
+    "validation_manifest": None,
+    "test_manifest": None,
+    "audio_column": "wav",
+    "label_column": "lang",
+    "preprocessing_num_workers": 16,
+    "audio_cache_dir": "/opt/ml/input/data/audio_cache",
+    "class_weighted_loss": True,
+    "max_train_samples": 100,
+    "max_eval_samples": 100,
+
+    # Core training run behaviour (TrainingArguments)
+    "output_dir": "/opt/ml/model",
+    "overwrite_output_dir": True,
+    "seed": 42,
+    "do_train": True,
+    "do_eval": True,
+    "do_predict": False,
+    "disable_tqdm": True,
+    "bf16": True,
+
+    # Optimisation schedule (TrainingArguments)
+    "num_train_epochs": 5,
+    "per_device_train_batch_size": 4,
+    "per_device_eval_batch_size": 8,
+    "gradient_accumulation_steps": 1,
+    "learning_rate": 3e-5,
+    "weight_decay": 0.0,
+    "max_grad_norm": 1.0,
+    "warmup_ratio": 0.1,
+    "lr_scheduler_type": "linear",
+
+    # Evaluation, logging, and checkpointing (TrainingArguments)
+    "eval_strategy": "steps",
+    "eval_steps": 500,
+    "eval_on_start": True,
+    "save_strategy": "steps",
+    "save_steps": 500,
+    "save_total_limit": 2,
+    "load_best_model_at_end": True,
+    "metric_for_best_model": "accuracy",
+    "greater_is_better": True,
+    "logging_strategy": "steps",
+    "logging_steps": 100,
 }
+
+
+def _stringify(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
 
 
 def parse_overrides(raw_overrides: Optional[str]) -> Dict[str, str]:
     if not raw_overrides:
         return {}
     overrides = json.loads(raw_overrides)
-    return {str(key): str(value) for key, value in overrides.items()}
+    return {str(key): _stringify(value) for key, value in overrides.items()}
+
+
+def serialise_hyperparameters(
+    defaults: Dict[str, Any], overrides: Dict[str, str]
+) -> Dict[str, str]:
+    hyperparameters: Dict[str, str] = {}
+    for key, value in defaults.items():
+        if value is None:
+            continue
+        hyperparameters[key] = _stringify(value)
+    hyperparameters.update(overrides)
+    return hyperparameters
 
 
 def main() -> None:
@@ -88,8 +133,8 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    hyperparameters = DEFAULT_HYPERPARAMETERS.copy()
-    hyperparameters.update(parse_overrides(args.hyperparameters))
+    overrides = parse_overrides(args.hyperparameters)
+    hyperparameters = serialise_hyperparameters(DEFAULT_HYPERPARAMETERS, overrides)
 
     inputs = {"train": args.train_manifest_s3}
     if args.validation_manifest_s3:
