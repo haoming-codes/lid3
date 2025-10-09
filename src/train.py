@@ -374,6 +374,29 @@ def prepare_label_mapping(dataset: DatasetDict, label_column: str) -> Dict[str, 
     return {"label_list": label_list, "label2id": label2id, "id2label": id2label}
 
 
+def _compute_truncation_length(
+    dataset: DatasetDict, percentile: float = 95.0
+) -> Optional[int]:
+    """Compute the audio length percentile (in samples) across all splits."""
+
+    lengths: List[int] = []
+    for split_dataset in dataset.values():
+        for example in split_dataset:
+            audio = example.get("audio")
+            if not audio:
+                continue
+            array = audio.get("array")
+            if array is None:
+                continue
+            lengths.append(len(array))
+
+    if not lengths:
+        return None
+
+    truncation_length = int(np.ceil(np.percentile(lengths, percentile)))
+    return truncation_length
+
+
 def preprocess_dataset(
     dataset: DatasetDict,
     feature_extractor: AutoFeatureExtractor,
@@ -383,16 +406,31 @@ def preprocess_dataset(
     target_sampling_rate = feature_extractor.sampling_rate
     dataset = dataset.cast_column("audio", Audio(sampling_rate=target_sampling_rate))
 
+    truncation_length = _compute_truncation_length(dataset)
+    if truncation_length is not None:
+        logger.info(
+            "Using max_length=%d (95th percentile ~%.2f seconds) for feature truncation",
+            truncation_length,
+            truncation_length / target_sampling_rate,
+        )
+    else:
+        logger.warning("Unable to compute audio length percentile; proceeding without truncation")
+
     def _prepare_batch(batch):
         audio_arrays = [audio["array"] for audio in batch["audio"]]
         sampling_rates = [audio["sampling_rate"] for audio in batch["audio"]]
         if any(sr != target_sampling_rate for sr in sampling_rates):
             logger.warning("Resampling detected; Audio feature extractor will handle conversion.")
-        inputs = feature_extractor(
-            audio_arrays,
-            sampling_rate=target_sampling_rate,
-            return_attention_mask=True,
-        )
+        extractor_kwargs = {
+            "sampling_rate": target_sampling_rate,
+            "return_attention_mask": True,
+        }
+        if truncation_length is not None:
+            extractor_kwargs.update({
+                "max_length": truncation_length,
+                "truncation": True,
+            })
+        inputs = feature_extractor(audio_arrays, **extractor_kwargs)
         result = {
             "input_values": inputs["input_values"],
             "labels": [label2id[label] for label in batch[data_args.label_column]],
