@@ -23,6 +23,33 @@ from transformers import (
     set_seed,
 )
 
+
+class WeightedLossTrainer(Trainer):
+    """Trainer subclass that supports class-weighted cross-entropy loss."""
+
+    def __init__(self, *args, class_weights: Optional[torch.Tensor] = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.class_weights = class_weights
+
+    def compute_loss(self, model, inputs, return_outputs=False):
+        if self.class_weights is None:
+            return super().compute_loss(model, inputs, return_outputs)
+
+        labels = inputs.get("labels")
+        if labels is None:
+            return super().compute_loss(model, inputs, return_outputs)
+
+        model_inputs = {k: v for k, v in inputs.items() if k != "labels"}
+        outputs = model(**model_inputs)
+        logits = outputs.get("logits")
+        if logits is None:
+            raise ValueError("Model outputs must contain `logits` when using class-weighted loss.")
+
+        loss_fct = torch.nn.CrossEntropyLoss(weight=self.class_weights.to(logits.device))
+        loss = loss_fct(logits.view(-1, logits.size(-1)), labels.view(-1))
+
+        return (loss, outputs) if return_outputs else loss
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -199,6 +226,12 @@ class DataTrainingArguments:
     )
     max_eval_samples: Optional[int] = field(
         default=None, metadata={"help": "For debugging, truncate the number of evaluation examples."}
+    )
+    class_weighted_loss: bool = field(
+        default=False,
+        metadata={
+            "help": "If true, compute class weights from the training split and use them for a weighted cross-entropy loss."
+        },
     )
 
 
@@ -434,6 +467,26 @@ def main():
 
     data_collator = DataCollatorWithPadding(tokenizer=feature_extractor, padding=True)
 
+    class_weights = None
+    if data_args.class_weighted_loss and dataset_dict.get("train") is not None:
+        train_labels = dataset_dict["train"]["labels"]
+        if isinstance(train_labels, torch.Tensor):
+            train_labels = train_labels.numpy()
+        label_counts = np.bincount(train_labels, minlength=len(label_list)).astype(float)
+        zero_mask = label_counts == 0
+        if zero_mask.any():
+            logger.warning(
+                "Encountered %d classes with zero training examples; their weights will be set to zero.",
+                int(zero_mask.sum()),
+            )
+        total = label_counts.sum()
+        class_weight_values = np.zeros_like(label_counts)
+        non_zero = ~zero_mask
+        if non_zero.any():
+            class_weight_values[non_zero] = total / (len(label_counts) * label_counts[non_zero])
+        class_weights = torch.tensor(class_weight_values, dtype=torch.float)
+        logger.info("Using class-weighted loss with weights: %s", class_weights.tolist())
+
     accuracy_metric = evaluate.load("accuracy")
     precision_metric = evaluate.load("precision")
     recall_metric = evaluate.load("recall")
@@ -487,7 +540,7 @@ def main():
 
         return metrics
 
-    trainer = Trainer(
+    trainer = WeightedLossTrainer(
         model=model,
         args=training_args,
         train_dataset=dataset_dict.get("train"),
@@ -495,6 +548,7 @@ def main():
         tokenizer=feature_extractor,
         data_collator=data_collator,
         compute_metrics=compute_metrics,
+        class_weights=class_weights,
     )
 
     if training_args.do_train:
