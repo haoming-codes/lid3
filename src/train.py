@@ -23,7 +23,12 @@ from transformers import (
     set_seed,
 )
 
-from language_groups import CHINESE_LANGUAGE_CODES, ENGLISH_LANGUAGE_CODES
+from language_groups import (
+    CHINESE_LANGUAGE_CODES,
+    EAST_AND_SOUTHEAST_ASIA_ENGLISH_CODES,
+    EAST_AND_SOUTHEAST_ASIA_LANGUAGE_CODES,
+    ENGLISH_LANGUAGE_CODES,
+)
 
 
 class WeightedLossTrainer(Trainer):
@@ -67,7 +72,9 @@ def get_s3_client():
     return _S3_CLIENT
 
 
-def _build_target_to_sources(id2label: Dict[int, str], mapping_strategy: str) -> Dict[str, List[str]]:
+def _build_target_to_sources(
+    id2label: Dict[int, str], mapping_strategy: str, other_scope: str
+) -> Dict[str, List[str]]:
     """Map MMS language codes to zh/en/other groups based on the chosen strategy."""
 
     normalized_codes = [label.lower() for label in id2label.values()]
@@ -82,11 +89,22 @@ def _build_target_to_sources(id2label: Dict[int, str], mapping_strategy: str) ->
         raise ValueError(f"Unsupported language mapping strategy: {mapping_strategy}")
 
     used_sources = set(zh_sources) | set(en_sources)
-    other_sources = sorted(code for code in normalized_codes if code not in used_sources)
+    remaining_sources = {code for code in normalized_codes if code not in used_sources}
+
+    if other_scope == "global":
+        other_sources = sorted(remaining_sources)
+    elif other_scope == "east_and_southeast_asia":
+        regional_codes = set(EAST_AND_SOUTHEAST_ASIA_LANGUAGE_CODES)
+        regional_english = set(EAST_AND_SOUTHEAST_ASIA_ENGLISH_CODES)
+        regional_sources = remaining_sources & (regional_codes - regional_english)
+        other_sources = sorted(regional_sources)
+    else:  # pragma: no cover - defensive programming
+        raise ValueError(f"Unsupported other-language scope: {other_scope}")
 
     logger.info(
-        "Language mapping strategy '%s' -> zh:%d en:%d other:%d",
+        "Language mapping strategy '%s' (other=%s) -> zh:%d en:%d other:%d",
         mapping_strategy,
+        other_scope,
         len(zh_sources),
         len(en_sources),
         len(other_sources),
@@ -109,7 +127,9 @@ def initialize_classifier_with_prototypes(model, model_args: "ModelArguments", l
 
     if base_model.config.id2label:
         target_to_sources = _build_target_to_sources(
-            base_model.config.id2label, model_args.language_mapping_strategy
+            base_model.config.id2label,
+            model_args.language_mapping_strategy,
+            model_args.other_language_scope,
         )
         base_label2id = {
             label.lower(): idx for idx, label in base_model.config.id2label.items()
@@ -118,6 +138,7 @@ def initialize_classifier_with_prototypes(model, model_args: "ModelArguments", l
         target_to_sources = _build_target_to_sources(
             {idx: label for label, idx in base_model.config.label2id.items()},
             model_args.language_mapping_strategy,
+            model_args.other_language_scope,
         )
         base_label2id = {
             label.lower(): idx for label, idx in base_model.config.label2id.items()
@@ -181,6 +202,16 @@ class ModelArguments:
                 "Controls how MMS language codes are grouped when initializing zh/en/other prototypes. "
                 "Use 'accented' to map all Chinese varieties to zh and all English varieties to en. "
                 "Use 'pure' to map only cmn to zh and eng to en while routing other varieties to other."
+            )
+        },
+    )
+    other_language_scope: str = field(
+        default="global",
+        metadata={
+            "help": (
+                "Controls which languages are grouped into the 'other' prototype when initializing from MMS models. "
+                "Use 'global' to include every language that is not mapped to zh or en. "
+                "Use 'east_and_southeast_asia' to include only East and Southeast Asian languages that are not mapped to zh or en."
             )
         },
     )
