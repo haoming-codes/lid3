@@ -33,7 +33,7 @@ class WeightedLossTrainer(Trainer):
         super().__init__(*args, **kwargs)
         self.class_weights = class_weights
 
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         if self.class_weights is None:
             return super().compute_loss(model, inputs, return_outputs)
 
