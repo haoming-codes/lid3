@@ -12,7 +12,7 @@ DEFAULT_HYPERPARAMETERS: Dict[str, Any] = {
     "model_name_or_path": "facebook/mms-lid-512",
     "cache_dir": None,
     "initialize_label_prototypes": True,
-    "language_mapping_strategy": "accented",
+    "language_mapping_strategy": "pure",  # pure or accented
     "train_classifier_head_only": False,
 
     # Data manifests and preprocessing (DataTrainingArguments)
@@ -24,8 +24,8 @@ DEFAULT_HYPERPARAMETERS: Dict[str, Any] = {
     "preprocessing_num_workers": 16,
     "audio_cache_dir": "/opt/ml/input/data/audio_cache",
     "class_weighted_loss": True,
-    "max_train_samples": 100,
-    "max_eval_samples": 100,
+    # "max_train_samples": 100,
+    # "max_eval_samples": 100,
 
     # Core training run behaviour (TrainingArguments)
     "output_dir": "/opt/ml/model",
@@ -49,17 +49,15 @@ DEFAULT_HYPERPARAMETERS: Dict[str, Any] = {
     "lr_scheduler_type": "linear",
 
     # Evaluation, logging, and checkpointing (TrainingArguments)
-    "eval_strategy": "steps",
-    "eval_steps": 500,
+    "eval_strategy": "steps", "eval_steps": 500,
     "eval_on_start": True,
-    "save_strategy": "steps",
-    "save_steps": 500,
+    "save_strategy": "steps", "save_steps": 500,
     "save_total_limit": 2,
     "load_best_model_at_end": True,
     "metric_for_best_model": "accuracy",
     "greater_is_better": True,
-    "logging_strategy": "steps",
-    "logging_steps": 100,
+    "logging_strategy": "steps", "logging_steps": 100,
+    "report_to": "wandb",
 }
 
 
