@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
+import wandb
+wandb.login(key="019cb7049b90ead6ebf8c152ba16611436fcf45a")
 
 import boto3
 import datasets
