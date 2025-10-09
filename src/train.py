@@ -3,7 +3,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
 import boto3
@@ -22,6 +22,8 @@ from transformers import (
     TrainingArguments,
     set_seed,
 )
+
+from language_groups import CHINESE_LANGUAGE_CODES, ENGLISH_LANGUAGE_CODES
 
 
 class WeightedLossTrainer(Trainer):
@@ -54,43 +56,6 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
-OTHER_CLASS_SOURCE_LANGS = [
-    # Indian subcontinent languages
-    "asm",
-    "ben",
-    "hin",
-    "mal",
-    "tam",
-    "tel",
-    "urd",
-    "guj",
-    "kan",
-    "pan",
-    "mar",
-    "ory",
-    "sin",
-    "npi",
-    "san",
-    # Southeast Asian languages
-    "vie",
-    "sun",
-    "zlm",
-    "ind",
-    "tgl",
-    "jav",
-    "ceb",
-    "war",
-    "tha",
-    "khm",
-    "lao",
-    "mya",
-    # East Asian languages (excluding Chinese varieties)
-    "kor",
-    "jpn",
-    "mon",
-]
-
-
 _S3_CLIENT = None
 
 
@@ -102,14 +67,36 @@ def get_s3_client():
     return _S3_CLIENT
 
 
+def _build_target_to_sources(id2label: Dict[int, str], mapping_strategy: str) -> Dict[str, List[str]]:
+    """Map MMS language codes to zh/en/other groups based on the chosen strategy."""
+
+    normalized_codes = [label.lower() for label in id2label.values()]
+
+    if mapping_strategy == "accented":
+        zh_sources = sorted({code for code in normalized_codes if code in CHINESE_LANGUAGE_CODES})
+        en_sources = sorted({code for code in normalized_codes if code in ENGLISH_LANGUAGE_CODES})
+    elif mapping_strategy == "pure":
+        zh_sources = [code for code in normalized_codes if code == "cmn"]
+        en_sources = [code for code in normalized_codes if code == "eng"]
+    else:  # pragma: no cover - defensive programming
+        raise ValueError(f"Unsupported language mapping strategy: {mapping_strategy}")
+
+    used_sources = set(zh_sources) | set(en_sources)
+    other_sources = sorted(code for code in normalized_codes if code not in used_sources)
+
+    logger.info(
+        "Language mapping strategy '%s' -> zh:%d en:%d other:%d",
+        mapping_strategy,
+        len(zh_sources),
+        len(en_sources),
+        len(other_sources),
+    )
+
+    return {"zh": zh_sources, "en": en_sources, "other": other_sources}
+
+
 def initialize_classifier_with_prototypes(model, model_args: "ModelArguments", label2id: Dict[str, int]) -> None:
     """Optionally initialize classifier weights from MMS-LID prototypes."""
-
-    target_to_sources = {
-        "zh": ["yue", "cmn"],
-        "en": ["eng"],
-        "other": OTHER_CLASS_SOURCE_LANGS,
-    }
 
     try:
         base_model = AutoModelForAudioClassification.from_pretrained(
@@ -120,13 +107,20 @@ def initialize_classifier_with_prototypes(model, model_args: "ModelArguments", l
         logger.warning("Failed to load base model for prototype initialization: %s", exc)
         return
 
-    if base_model.config.label2id:
-        base_label2id = {
-            label.lower(): idx for label, idx in base_model.config.label2id.items()
-        }
-    elif base_model.config.id2label:
+    if base_model.config.id2label:
+        target_to_sources = _build_target_to_sources(
+            base_model.config.id2label, model_args.language_mapping_strategy
+        )
         base_label2id = {
             label.lower(): idx for idx, label in base_model.config.id2label.items()
+        }
+    elif base_model.config.label2id:
+        target_to_sources = _build_target_to_sources(
+            {idx: label for label, idx in base_model.config.label2id.items()},
+            model_args.language_mapping_strategy,
+        )
+        base_label2id = {
+            label.lower(): idx for label, idx in base_model.config.label2id.items()
         }
     else:
         logger.warning(
@@ -177,6 +171,16 @@ class ModelArguments:
             "help": (
                 "If true, initialize the classification head using averaged prototypes from the "
                 "facebook/mms-lid-126 checkpoint for zh/en/other labels."
+            )
+        },
+    )
+    language_mapping_strategy: str = field(
+        default="accented",
+        metadata={
+            "help": (
+                "Controls how MMS language codes are grouped when initializing zh/en/other prototypes. "
+                "Use 'accented' to map all Chinese varieties to zh and all English varieties to en. "
+                "Use 'pure' to map only cmn to zh and eng to en while routing other varieties to other."
             )
         },
     )
@@ -406,6 +410,13 @@ def main():
 
     training_args.remove_unused_columns = False
     set_seed(training_args.seed)
+
+    valid_strategies = {"accented", "pure"}
+    if model_args.language_mapping_strategy not in valid_strategies:
+        raise ValueError(
+            f"language_mapping_strategy must be one of {sorted(valid_strategies)}; received "
+            f"{model_args.language_mapping_strategy!r}."
+        )
 
     train_manifest = resolve_manifest_path(data_args.train_manifest, "train")
     eval_manifest = resolve_manifest_path(data_args.validation_manifest, "validation")
