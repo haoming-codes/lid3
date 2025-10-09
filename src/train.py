@@ -228,7 +228,7 @@ class DataTrainingArguments:
         default=None, metadata={"help": "For debugging, truncate the number of evaluation examples."}
     )
     class_weighted_loss: bool = field(
-        default=False,
+        default=True,
         metadata={
             "help": "If true, compute class weights from the training split and use them for a weighted cross-entropy loss."
         },
