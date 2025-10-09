@@ -8,7 +8,7 @@ from sagemaker.session import Session
 
 
 DEFAULT_HYPERPARAMETERS: Dict[str, str] = {
-    "model_name_or_path": "facebook/mms-lid-126",
+    "model_name_or_path": "facebook/mms-lid-512",
     "do_train": "true",
     "do_eval": "true",
     "output_dir": "/opt/ml/model",
@@ -28,8 +28,9 @@ DEFAULT_HYPERPARAMETERS: Dict[str, str] = {
     "metric_for_best_model": "accuracy",
     "preprocessing_num_workers": "16",
     "initialize_label_prototypes": "true",
-    # "max_train_samples": "100",
-    # "max_eval_samples": "100",
+    "language_mapping_strategy": "accented",
+    "max_train_samples": "100",
+    "max_eval_samples": "100",
     "bf16": "true",
     "disable_tqdm": "true",
 }
